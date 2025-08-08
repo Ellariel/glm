@@ -95,7 +95,7 @@ def random_amount(): # SAT
         return LOG_SPACE[random.randrange(0, 10**6)]
 
 
-def gen_txset(G, transacitons_count=5000, seed=47):
+def gen_txset(G, transacitons_count=10000, seed=1313):
         
     def shortest_path_len(u, v):
         path_len = 0
