@@ -93,3 +93,32 @@ def random_amount(): # SAT
         # average: 508484.0 SAT
         # lowest: 100.0 SAT
         return LOG_SPACE[random.randrange(0, 10**6)]
+
+
+def gen_txset(G, transacitons_count=5000, seed=47):
+        
+    def shortest_path_len(u, v):
+        path_len = 0
+        try:
+              path_len = nx.shortest_path_length(G, u, v)
+        except:
+              pass
+        return path_len
+    
+    random.seed(seed)
+    np.random.seed(seed)
+
+    tx_set = []
+    nodes = list(G.nodes)
+    max_path_length = 0
+    for _ in tqdm(range(1, transacitons_count + 1), leave=False):
+            while True:
+              u = nodes[random.randrange(0, len(nodes))]
+              v = nodes[random.randrange(0, len(nodes))]
+              p = shortest_path_len(u, v)
+              max_path_length = max(max_path_length, p)
+              if v != u and p >= 2 and (u, v) not in tx_set:
+                break
+            tx_set.append((u, v))
+    tx_set = [(tx[0], tx[1], random_amount() + 100) for tx in tx_set]
+    return tx_set

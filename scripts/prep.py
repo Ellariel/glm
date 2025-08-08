@@ -5,7 +5,9 @@ import pandas as pd
 import networkx as nx
 from tqdm import tqdm
 import zipfile
+import pickle
 
+from proto import gen_txset
 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -110,8 +112,11 @@ zf.close()
 os.remove(os.path.join(data_dir, 
                         'snapshot.gml.geo'))
 
-
-
+txs = gen_txset(g)
+with open(os.path.join(data_dir, 
+                            'txs.pkl'), 'wb') as f:
+    print(len(txs), 'transactions saved')
+    pickle.dump(txs, f)
 
 
 
