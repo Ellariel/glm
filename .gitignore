@@ -5,6 +5,9 @@ __pycache__/
 
 # C extensions
 *.so
+*.key
+*.geo
+
 
 # Distribution / packaging
 .Python
