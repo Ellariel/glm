@@ -43,6 +43,12 @@ g = nx.read_gml(zipfile.ZipFile(os.path.join(data_dir,
                                     '20230716.gml.geo.zip'), 'r')\
                                         .open('20230716.gml.geo'))
 
+components = [g.subgraph(c) 
+                for c in sorted(nx.connected_components(g), 
+                    key=len, reverse=True)]
+g = components[0]
+print(g)
+
 geoloc_def = [g.nodes[i]['geojson'] 
             for i in tqdm(g.nodes, leave=False) 
                 if 'geojson' in g.nodes[i] and\

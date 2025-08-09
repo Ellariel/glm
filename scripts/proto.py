@@ -119,7 +119,7 @@ def random_amount(): # SAT
         return LOG_SPACE[random.randrange(0, 10**6)]
 
 
-def gen_txset(G, transacitons_count=10000, use_first_component=True, seed=1313):
+def gen_txset(G, transacitons_count=10000, seed=1313):
         
     def shortest_path_len(u, v):
         path_len = 0
@@ -131,12 +131,6 @@ def gen_txset(G, transacitons_count=10000, use_first_component=True, seed=1313):
     
     random.seed(seed)
     np.random.seed(seed)
-
-    if use_first_component:
-        components = [G.subgraph(c) 
-                        for c in sorted(nx.connected_components(G), 
-                            key=len, reverse=True)]
-        G = components[0]
 
     tx_set = []
     nodes = list(G.nodes)
@@ -154,56 +148,89 @@ def gen_txset(G, transacitons_count=10000, use_first_component=True, seed=1313):
     return tx_set
 
 
-def get_landmark(G, n, type='country'):
-    country = G.nodes[n]['geojson']['country']
-    continent = G.nodes[n]['geojson']['continent']
-    neighbors = [i for i in G.neighbors(n)]
-    if type == 'continent':
-        continent_neighbors = [i for i in neighbors if G.nodes[i]['geojson']['continent'] == continent]
-        if len(continent_neighbors):
-            continent_neighbors = sorted(continent_neighbors, 
-                                    key=lambda x: G.degree[x],
-                                    reverse=True)
-            #print(continent_neighbors)
-            return continent_neighbors[0]
-    country_neighbors = [i for i in neighbors if G.nodes[i]['geojson']['country'] == country]
-    if len(country_neighbors):
-        country_neighbors = sorted(country_neighbors, 
-                                   key=lambda x: G.degree[x],
-                                   reverse=True)
-        #print(country_neighbors)
-        return country_neighbors[0]
-    neighbors = sorted(neighbors, 
-                        key=lambda x: G.degree[x],
-                        reverse=True)
-    return neighbors[0]
+country_landmarks = {}
+continent_landmarks = {}
+#degree_centrality = {}
 
+def get_landmark(G, u, v, type='country', limit=100):
+    continent = G.nodes[u]['geojson']['continent']
+    country = G.nodes[u]['geojson']['country']
+    if type == 'continent':
+        landmarks = [i for i in list(G.neighbors(u)) + list(G.neighbors(v))
+                        if G.nodes[i]['geojson']['continent'] == continent]
+    if type == 'country':
+        landmarks = [i for i in list(G.neighbors(u)) + list(G.neighbors(v))
+                        if G.nodes[i]['geojson']['country'] == country]
+    landmarks = sorted(landmarks, key=lambda x: G.degree[x] / G.nodes[x]['carbon'], 
+                            reverse=True)[:limit]
+    if landmarks:
+        return landmarks[0]#
+        #return np.random.choice(landmarks, 1)[0] 
+    
+    #global degree_centrality
+    #if not len(degree_centrality):
+    #    degree_centrality = nx.degree_centrality(G)
+    #    degree_centrality = dict(sorted(degree_centrality.items(), key=lambda x: x[1], reverse=True))
+    #    #print(degree_centrality)
+    '''
+    if type == 'continent':
+        global continent_landmarks
+        continent = G.nodes[n]['geojson']['continent']
+        if continent not in continent_landmarks:
+            landmarks = [i for i in degree_centrality.keys() 
+                                if G.nodes[i]['geojson']['continent'] == continent]
+
+            #landmarks = [i for i in G.nodes if G.nodes[i]['geojson']['continent'] == continent]
+            landmarks = sorted(landmarks, key=lambda x: G.nodes[x]['carbon'], reverse=False)[:limit]
+            #landmarks = sorted(landmarks, key=lambda x: G.degree[x], reverse=True)[:limit]
+            #landmarks = sorted(landmarks, key=lambda x: G.degree[x] / G.nodes[x]['carbon'], reverse=False)[:limit]
+            continent_landmarks.update({continent : landmarks})
+        return np.random.choice(continent_landmarks[continent], 1)[0]
+    if type == 'country':
+        global country_landmarks
+        country = G.nodes[n]['geojson']['country']
+        if country not in country_landmarks:
+            landmarks = [i for i in G.nodes if G.nodes[i]['geojson']['country'] == country]
+            #landmarks = sorted(landmarks, key=lambda x: G.nodes[x]['carbon'], reverse=False)[:1000]
+            #landmarks = sorted(landmarks, key=lambda x: G.degree[x], reverse=True)[:limit]
+            landmarks = sorted(landmarks, key=lambda x: G.degree[x] / G.nodes[x]['carbon'], reverse=False)[:limit]
+            country_landmarks.update({country : landmarks})    
+        return np.random.choice(country_landmarks[country], 1)[0]    
+    '''
+    
 
 def perform_payment(G, u, v, amount, proto_type='LND', max_count=5, timeout=3):
         
     if proto_type[0] == 'g':
         proto_type=proto_type[1:]
-        u_country = G.nodes[u]['geojson']['country']
-        v_country = G.nodes[v]['geojson']['country']
-        u_continent = G.nodes[u]['geojson']['continent']
-        v_continent = G.nodes[v]['geojson']['continent']
-        lm = None
-        if u_country == v_country:
-            lm = get_landmark(G, u, type='country')
-        elif u_continent == v_continent:
-            lm = get_landmark(G, u, type='continent')
-        if lm is not None:
-            lm_paths = get_shortest_paths(G, u, lm, amount, 
-                                    proto_type=proto_type,
-                                    max_count=max_count, 
-                                    timeout=timeout)
-            def_paths = get_shortest_paths(G, lm, v, amount, 
-                                    proto_type=proto_type,
-                                    max_count=max_count, 
-                                    timeout=timeout)
-            paths = []
-            for p1, p2 in zip(lm_paths, def_paths):
-                paths.append(p1 + p2[1:])  
+        if v not in G.neighbors(u):
+            u_country = G.nodes[u]['geojson']['country']
+            v_country = G.nodes[v]['geojson']['country']
+            u_continent = G.nodes[u]['geojson']['continent']
+            v_continent = G.nodes[v]['geojson']['continent']
+            lm = None
+            if u_country == v_country:
+                lm = get_landmark(G, u, v, type='country')
+            elif u_continent == v_continent:
+                lm = get_landmark(G, u, v, type='continent')
+                #print(lm)
+            if lm is not None:
+                lm_paths = get_shortest_paths(G, u, lm, amount, 
+                                        proto_type=proto_type,
+                                        max_count=max_count, 
+                                        timeout=timeout)
+                def_paths = get_shortest_paths(G, lm, v, amount, 
+                                        proto_type=proto_type,
+                                        max_count=max_count, 
+                                        timeout=timeout)
+                paths = []
+                for p1, p2 in zip(lm_paths, def_paths):
+                    paths.append(p1 + p2[1:])  
+            else:
+                paths = get_shortest_paths(G, u, v, amount, 
+                                        proto_type=proto_type,
+                                        max_count=max_count, 
+                                        timeout=timeout) 
         else:
             paths = get_shortest_paths(G, u, v, amount, 
                                     proto_type=proto_type,
