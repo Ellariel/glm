@@ -116,12 +116,12 @@ for u, v in tqdm(g.edges, leave=False):
         channels_new['cross_continent'] += 1
 
 for u, v in tqdm(g.edges, leave=False):
-    g.edges[u, v]['fee_base_msat'] = float(g.edges[u, v]['fee_base_msat'])
-    g.edges[u, v]['fee_rate_msat'] = float(g.edges[u, v]['fee_proportional_millionths']) / 1000
-    g.edges[u, v]['delay'] = float(g.edges[u, v]['cltv_expiry_delta'])
-    g.edges[u, v]['htlc_minimim_msat'] = float(g.edges[u, v]['htlc_minimim_msat'])
-    g.edges[u, v]['htlc_maximum_msat'] = float(g.edges[u, v]['htlc_maximum_msat'])
-    g.edges[u, v]['age'] = float(random.randint(MIN_AGE, MAX_AGE))
+    g.edges[u, v]['fee_base_msat'] = int(g.edges[u, v]['fee_base_msat'])
+    g.edges[u, v]['fee_rate_msat'] = int(g.edges[u, v]['fee_proportional_millionths']) / 1000
+    g.edges[u, v]['delay'] = int(g.edges[u, v]['cltv_expiry_delta'])
+    g.edges[u, v]['htlc_minimim_msat'] = int(g.edges[u, v]['htlc_minimim_msat'])
+    g.edges[u, v]['htlc_maximum_msat'] = int(g.edges[u, v]['htlc_maximum_msat'])
+    g.edges[u, v]['age'] = int(random.randint(MIN_AGE, MAX_AGE))
     g.edges[u, v]['capacity_msat'] = random.randint(g.edges[u, v]['htlc_minimim_msat'], 
                                                     g.edges[u, v]['htlc_maximum_msat'])
 

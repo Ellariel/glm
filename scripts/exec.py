@@ -53,14 +53,24 @@ random.seed(1313)
 np.random.seed(1313)
 
 
+def save_results(results):
+    with open(os.path.join(results_dir, 
+                                f'{args.proto}.pkl'), 'wb') as f:
+        pickle.dump(results, f)  
+
+
 results = []
-for u, v, amount in tqdm(txs[:5]):
+for i, (u, v, amount) in enumerate(tqdm(txs[:100])):
     r = perform_payment(g, u, v, amount, 
-                               proto_type=args.proto)
+                               proto_type=args.proto,
+                               max_count=5,
+                               timeout=2)
     results.append(r)
-print(results)
-with open(os.path.join(results_dir, 
-                            f'{args.proto}.pkl'), 'wb') as f:
-    
-    pickle.dump(results, f)
+
+    if i % 1000 == 0:
+        save_results(results)
+
+save_results(results)
+
+os._exit(0)
     
