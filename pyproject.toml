@@ -8,5 +8,8 @@ dependencies = [
 "pandas",
 "requests",
 "tqdm",
+"scipy",
+"matplotlib",
 "networkx>=3.4.2",
+"ipykernel",
 ]

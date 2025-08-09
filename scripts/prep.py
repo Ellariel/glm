@@ -7,7 +7,7 @@ from tqdm import tqdm
 import zipfile
 import pickle
 
-from proto import gen_txset
+from proto import gen_txset, MIN_AGE, MAX_AGE, MIN_CAP, MAX_CAP
 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -23,6 +23,19 @@ print('data_dir:', data_dir)
 continents = pd.read_csv(os.path.join(data_dir, 'country-and-continent.csv'), 
                          na_filter=False,
                          dtype=str)
+
+intencity = pd.read_csv(os.path.join(data_dir, 'ourworldindata_2025.csv'),
+                        sep=';', parse_dates=True)
+intencity = intencity.rename(columns={intencity.columns[1]: 'carbon'})
+intencity = intencity.groupby('country_code').last()['carbon'].reset_index()
+
+intencity = pd.merge(intencity, continents, 
+                     left_on='country_code',
+                     right_on='Three_Letter_Country_Code')\
+                        .set_index('Two_Letter_Country_Code').to_dict()['carbon']
+
+intencity_avg = np.mean(list(intencity.values())) # 442.396
+
 continents = continents[['Two_Letter_Country_Code', 'Continent_Code']]\
                 .set_index('Two_Letter_Country_Code').to_dict()['Continent_Code']
 
@@ -54,6 +67,10 @@ for n in tqdm(g.nodes, leave=False):
             g.nodes[n]['geojson'] = geoloc_def[idx]
     else:
        g.nodes[n]['geojson']['continent'] = continents[g.nodes[n]['geojson']['country']]
+    if g.nodes[n]['geojson']['country'] in intencity:
+        g.nodes[n]['carbon'] = intencity[g.nodes[n]['geojson']['country']]
+    else:
+        g.nodes[n]['carbon'] = intencity_avg
 
 geoloc_new = [g.nodes[i]['geojson'] 
             for i in tqdm(g.nodes, leave=False) 
@@ -90,27 +107,38 @@ for u, v in tqdm(g.edges, leave=False):
             g.edges[u, v]['type'] = 'same_country'
             channels_new['same_country'] += 1
         else:
-            g.edges[u, v]['fail_prob'] = 0.003
+            g.edges[u, v]['fail_prob'] = 0.005
             g.edges[u, v]['type'] = 'same_continent'
             channels_new['same_continent'] += 1
     else:
-        g.edges[u, v]['fail_prob'] = 0.005
+        g.edges[u, v]['fail_prob'] = 0.007
         g.edges[u, v]['type'] = 'cross_continent'
         channels_new['cross_continent'] += 1
+
+for u, v in tqdm(g.edges, leave=False):
+    g.edges[u, v]['fee_base_msat'] = float(g.edges[u, v]['fee_base_msat'])
+    g.edges[u, v]['fee_rate_msat'] = float(g.edges[u, v]['fee_proportional_millionths']) / 1000
+    g.edges[u, v]['delay'] = float(g.edges[u, v]['cltv_expiry_delta'])
+    g.edges[u, v]['htlc_minimim_msat'] = float(g.edges[u, v]['htlc_minimim_msat'])
+    g.edges[u, v]['htlc_maximum_msat'] = float(g.edges[u, v]['htlc_maximum_msat'])
+    g.edges[u, v]['age'] = float(random.randint(MIN_AGE, MAX_AGE))
+    g.edges[u, v]['capacity_msat'] = random.randint(g.edges[u, v]['htlc_minimim_msat'], 
+                                                    g.edges[u, v]['htlc_maximum_msat'])
 
 for k, v in channels_new.items():
     print(k, 100*v/len(g.edges))
 
-nx.write_gml(g, os.path.join(data_dir, 
-                             'snapshot.gml.geo'))
-zf = zipfile.ZipFile(os.path.join(data_dir, 
-                        'snapshot.gml.geo.zip'), 
-                            "w", zipfile.ZIP_DEFLATED)
-zf.write(os.path.join(data_dir, 
-                        'snapshot.gml.geo'))
+result_file = os.path.join(data_dir, 
+                            'snapshot.gml.geo')
+
+nx.write_gml(g, result_file)
+if os.path.exists(result_file + '.zip'):
+    os.remove(result_file + '.zip')
+zf = zipfile.ZipFile(result_file + '.zip', 
+                        "w", zipfile.ZIP_DEFLATED)
+zf.write(result_file, 'snapshot.gml.geo')
 zf.close()
-os.remove(os.path.join(data_dir, 
-                        'snapshot.gml.geo'))
+os.remove(result_file)
 
 txs = gen_txset(g)
 with open(os.path.join(data_dir, 

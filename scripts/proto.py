@@ -8,6 +8,7 @@ import requests
 
 
 def normalize(x, min, max):
+    x = float(x)
     if x <= min:
         return 0.0
     if x > max:
@@ -53,16 +54,17 @@ LOG_SPACE = np.logspace(0, 7, 10**6)
 
 
 def cost_function(G, u, v, amount, proto_type='LND'):
-    fee = G.edges[u, v]['fee_base_sat'] + amount * G.edges[u, v]['fee_rate_sat']
+    
+    fee = G.edges[u, v]['fee_base_msat'] + amount * G.edges[u, v]['fee_rate_msat']
     if proto_type == 'LND':
         cost = (amount + fee) * G.edges[u, v]['delay'] * LND_RISK_FACTOR + fee # + calc_bias(G.edges[u, v]['last_failure'])*1e6
                                                                                # we don't consider failure heuristic at this point
     elif proto_type == 'ECL':
-        n_capacity = 1 - (normalize(G.edges[u, v]['capacity_sat'], MIN_CAP, MAX_CAP))
-        n_age = normalize(BLOCK_HEIGHT - G.edges[u, v]['age'], MIN_AGE, MAX_AGE)
+        n_capacity = 1 - (normalize(G.edges[u, v]['capacity_msat'], MIN_CAP, MAX_CAP))
+        n_age = normalize(G.edges[u, v]['age'], MIN_AGE, MAX_AGE)
         n_delay = normalize(G.edges[u, v]['delay'], MIN_DELAY, MAX_DELAY)
         cost = fee * (n_delay * DELAY_RATIO + n_capacity * CAPACITY_RATIO + n_age * AGE_RATIO) 
-            
+        print(cost)
     elif proto_type == 'CLN':
         fee = fee * (1 + DEFAULT_FUZZ * FUZZ)
         cost = (amount + fee) * G.edges[u, v]['delay'] * C_RISK_FACTOR + RISK_BIAS
@@ -75,8 +77,11 @@ def cost_function(G, u, v, amount, proto_type='LND'):
 
 def get_shortest_paths(G, u, v, amount, proto_type='LND', max_count=5):
 
-    def weight_function(u, v, d):
+    def weight_function(u, v, e):
         return cost_function(G, u, v, amount, proto_type=proto_type)
+    
+    return list(itertools.islice(nx.all_shortest_paths(G, u, v, 
+                                                      weight=weight_function), max_count))
 
     try:
         return list(itertools.islice(nx.all_shortest_paths(G, u, v, 
@@ -122,3 +127,47 @@ def gen_txset(G, transacitons_count=10000, seed=1313):
             tx_set.append((u, v))
     tx_set = [(tx[0], tx[1], random_amount() + 100) for tx in tx_set]
     return tx_set
+
+
+def perform_payment(G, u, v, amount, proto_type='LND', max_count=5):
+    paths = get_shortest_paths(G, u, v, amount, 
+                               proto_type=proto_type,
+                               max_count=max_count)
+    metrics = {
+        'path_attempts': 0,
+        'payment_hops': 0,
+        'same_country': 0,
+        'same_continent': 0,
+        'cross_continent': 0,
+        'carbon': 0,
+    }
+    for p in paths:
+        metrics['path_attempts'] += 1
+        a = amount
+        payment_succeed = True
+        for u, v in itertools.pairwise(p):
+            metrics['payment_hops'] += 1
+            e = G.edges[u, v]
+            payment_succeed = payment_succeed and\
+                                    np.random.choice([True, False], 1,
+                                               p=[1-e['fail_prob'], 
+                                                    e['fail_prob']])[0]
+            fee = e['fee_base_msat'] + amount * e['fee_rate_msat']
+            payment_succeed = payment_succeed and\
+                                    amount + fee <= float(e['capacity_msat'])
+            if payment_succeed:
+                metrics[e['type']] += 1
+                metrics['carbon'] += G.nodes[u]['carbon']
+                a += fee
+            else:
+                break
+
+        if payment_succeed:
+            metrics['payment_succeed'] = payment_succeed
+            metrics['amount_payed'] = a
+            metrics['amount'] = amount
+            metrics['paths'] = paths
+            metrics['carbon'] += G.nodes[p[-1]]['carbon']
+            break
+
+    return metrics
