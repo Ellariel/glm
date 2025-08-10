@@ -79,7 +79,7 @@ LOG_SPACE = np.logspace(0, 7, 10**6)
 
 
 def cost_function(e, amount, proto_type='LND'):
-    fee = e['fee_base_msat'] + amount * e['fee_rate_msat']
+    fee = e['fee_base_msat'] + amount * e['fee_rate']
     if proto_type == 'LND':
         cost = (amount + fee) * e['delay'] * LND_RISK_FACTOR + fee  # + calc_bias(e['last_failure'])*1e6
                                                                     # we don't consider failure heuristic at this point
@@ -116,7 +116,7 @@ def random_amount(): # SAT
         # highest: 3967739.0 SAT
         # average: 508484.0 SAT
         # lowest: 100.0 SAT
-        return LOG_SPACE[random.randrange(0, 10**6)]
+        return LOG_SPACE[random.randrange(0, 10**6)] + 100
 
 
 def gen_txset(G, transacitons_count=10000, seed=1313):
@@ -144,7 +144,7 @@ def gen_txset(G, transacitons_count=10000, seed=1313):
               if v != u and p >= 2 and (u, v) not in tx_set:
                 break
             tx_set.append((u, v))
-    tx_set = [(tx[0], tx[1], random_amount() + 100) for tx in tx_set]
+    tx_set = [(tx[0], tx[1], random_amount() * 1000) for tx in tx_set]
     return tx_set
 
 
@@ -152,18 +152,26 @@ country_landmarks = {}
 continent_landmarks = {}
 #degree_centrality = {}
 
-def get_landmark(G, u, v, type='country', limit=100):
+def get_landmarks(G, u, v, type='country', limit=100):
+    '''
     continent = G.nodes[u]['geojson']['continent']
     country = G.nodes[u]['geojson']['country']
     if type == 'continent':
-        landmarks = [i for i in list(G.neighbors(u)) + list(G.neighbors(v))
+        landmarks = [i for i in G.nodes #list(G.neighbors(u)) + list(G.neighbors(v))
                         if G.nodes[i]['geojson']['continent'] == continent]
     if type == 'country':
-        landmarks = [i for i in list(G.neighbors(u)) + list(G.neighbors(v))
+        landmarks = [i for i in G.nodes #list(G.neighbors(u)) + list(G.neighbors(v))
                         if G.nodes[i]['geojson']['country'] == country]
-    landmarks = sorted(landmarks, key=lambda x: G.degree[x] / G.nodes[x]['carbon'], 
-                            reverse=True)[:limit]
-    if landmarks:
+        
+    landmarks = sorted(landmarks, key=lambda x: G.nodes[x]['carbon'] / G.degree(x), 
+                            reverse=False)[:1000]
+    
+    #landmarks = sorted(landmarks, key=lambda x: G.degree[x], 
+    #                        reverse=True)[:1000]
+    
+    landmarks = [i for i in landmarks if i in set(list(G.neighbors(u)) + list(G.neighbors(v)))]
+    print(len(landmarks))
+    if len(landmarks):
         return landmarks[0]#
         #return np.random.choice(landmarks, 1)[0] 
     
@@ -175,67 +183,81 @@ def get_landmark(G, u, v, type='country', limit=100):
     '''
     if type == 'continent':
         global continent_landmarks
-        continent = G.nodes[n]['geojson']['continent']
+        continent = G.nodes[u]['geojson']['continent']
         if continent not in continent_landmarks:
-            landmarks = [i for i in degree_centrality.keys() 
-                                if G.nodes[i]['geojson']['continent'] == continent]
-
-            #landmarks = [i for i in G.nodes if G.nodes[i]['geojson']['continent'] == continent]
-            landmarks = sorted(landmarks, key=lambda x: G.nodes[x]['carbon'], reverse=False)[:limit]
-            #landmarks = sorted(landmarks, key=lambda x: G.degree[x], reverse=True)[:limit]
-            #landmarks = sorted(landmarks, key=lambda x: G.degree[x] / G.nodes[x]['carbon'], reverse=False)[:limit]
+            landmarks = [i for i in G.nodes if G.nodes[i]['geojson']['continent'] == continent]
+            landmarks = sorted(landmarks, key=lambda x: G.nodes[x]['carbon'] / G.degree(x), reverse=False)#[:limit]
             continent_landmarks.update({continent : landmarks})
-        return np.random.choice(continent_landmarks[continent], 1)[0]
+        landmarks = [i for i in continent_landmarks[continent] 
+                            if i in G.neighbors(u) or i in G.neighbors(v)] # / G.degree(x)
+
     if type == 'country':
         global country_landmarks
-        country = G.nodes[n]['geojson']['country']
+        country = G.nodes[u]['geojson']['country']
         if country not in country_landmarks:
             landmarks = [i for i in G.nodes if G.nodes[i]['geojson']['country'] == country]
-            #landmarks = sorted(landmarks, key=lambda x: G.nodes[x]['carbon'], reverse=False)[:1000]
-            #landmarks = sorted(landmarks, key=lambda x: G.degree[x], reverse=True)[:limit]
-            landmarks = sorted(landmarks, key=lambda x: G.degree[x] / G.nodes[x]['carbon'], reverse=False)[:limit]
-            country_landmarks.update({country : landmarks})    
-        return np.random.choice(country_landmarks[country], 1)[0]    
-    '''
+            landmarks = sorted(landmarks, key=lambda x: G.nodes[x]['carbon'] / G.degree(x), reverse=False)#[:limit]
+            country_landmarks.update({country : landmarks})
+        landmarks = [i for i in country_landmarks[country] 
+                            if i in G.neighbors(u) or i in G.neighbors(v)]   
+    
+    if len(landmarks):
+        print(len(landmarks))
+        return landmarks[0]#
+        #return np.random.choice(landmarks[:limit], 1)[0] 
     
 
 def perform_payment(G, u, v, amount, proto_type='LND', max_count=5, timeout=3):
         
     if proto_type[0] == 'g':
         proto_type=proto_type[1:]
+        '''
+        paths = get_shortest_paths(G, u, v, amount, 
+                                        proto_type=None,#proto_type,
+                                        max_count=max_count, 
+                                        timeout=timeout)
+        '''
         if v not in G.neighbors(u):
+            
             u_country = G.nodes[u]['geojson']['country']
             v_country = G.nodes[v]['geojson']['country']
             u_continent = G.nodes[u]['geojson']['continent']
             v_continent = G.nodes[v]['geojson']['continent']
             lm = None
             if u_country == v_country:
-                lm = get_landmark(G, u, v, type='country')
+                lm = get_landmarks(G, u, v, type='country')
             elif u_continent == v_continent:
-                lm = get_landmark(G, u, v, type='continent')
+                lm = get_landmarks(G, u, v, type='continent')
                 #print(lm)
             if lm is not None:
+                #paths = [[u, i, v] for i in lm]
+                
                 lm_paths = get_shortest_paths(G, u, lm, amount, 
                                         proto_type=proto_type,
                                         max_count=max_count, 
                                         timeout=timeout)
                 def_paths = get_shortest_paths(G, lm, v, amount, 
-                                        proto_type=proto_type,
+                                        proto_type=proto_type, #None,#
                                         max_count=max_count, 
                                         timeout=timeout)
                 paths = []
                 for p1, p2 in zip(lm_paths, def_paths):
                     paths.append(p1 + p2[1:])  
+                ''''''
+                
             else:
                 paths = get_shortest_paths(G, u, v, amount, 
                                         proto_type=proto_type,
                                         max_count=max_count, 
                                         timeout=timeout) 
+            
         else:
             paths = get_shortest_paths(G, u, v, amount, 
                                     proto_type=proto_type,
                                     max_count=max_count, 
                                     timeout=timeout)   
+        '''
+        '''
     else:
         paths = get_shortest_paths(G, u, v, amount, 
                                 proto_type=proto_type,
@@ -252,6 +274,7 @@ def perform_payment(G, u, v, amount, proto_type='LND', max_count=5, timeout=3):
     for p in paths:
         metrics['path_attempts'] += 1
         a = amount
+        delay = 0
         payment_succeed = True
         for u, v in itertools.pairwise(p):
             metrics['payment_hops'] += 1
@@ -260,12 +283,13 @@ def perform_payment(G, u, v, amount, proto_type='LND', max_count=5, timeout=3):
                                     np.random.choice([True, False], 1,
                                                p=[1-e['fail_prob'], 
                                                     e['fail_prob']])[0]
-            fee = e['fee_base_msat'] + amount * e['fee_rate_msat']
+            fee = e['fee_base_msat'] + amount * e['fee_rate']
             payment_succeed = payment_succeed and\
                                     amount + fee <= float(e['capacity_msat'])
             if payment_succeed:
                 metrics[e['type']] += 1
                 metrics['carbon'] += G.nodes[u]['carbon']
+                delay += e['delay']
                 a += fee
             else:
                 break
@@ -276,6 +300,7 @@ def perform_payment(G, u, v, amount, proto_type='LND', max_count=5, timeout=3):
         metrics['paths'] = paths
         if payment_succeed:
             metrics['amount_payed'] = a
+            metrics['delay'] = delay
             break
 
     return metrics

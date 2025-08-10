@@ -7,7 +7,7 @@ from tqdm import tqdm
 import zipfile
 import pickle
 
-from proto import gen_txset, MIN_AGE, MAX_AGE, MIN_CAP, MAX_CAP
+from proto import gen_txset, MIN_AGE, MAX_AGE#, MIN_CAP, MAX_CAP
 
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -109,21 +109,21 @@ channels_new = {
 for u, v in tqdm(g.edges, leave=False):
     if g.nodes[u]['geojson']['continent'] == g.nodes[v]['geojson']['continent']:
         if g.nodes[u]['geojson']['country'] == g.nodes[v]['geojson']['country']:
-            g.edges[u, v]['fail_prob'] = 0.001
+            g.edges[u, v]['fail_prob'] = 0.1
             g.edges[u, v]['type'] = 'same_country'
             channels_new['same_country'] += 1
         else:
-            g.edges[u, v]['fail_prob'] = 0.005
+            g.edges[u, v]['fail_prob'] = 0.3
             g.edges[u, v]['type'] = 'same_continent'
             channels_new['same_continent'] += 1
     else:
-        g.edges[u, v]['fail_prob'] = 0.007
+        g.edges[u, v]['fail_prob'] = 0.5
         g.edges[u, v]['type'] = 'cross_continent'
         channels_new['cross_continent'] += 1
 
 for u, v in tqdm(g.edges, leave=False):
     g.edges[u, v]['fee_base_msat'] = int(g.edges[u, v]['fee_base_msat'])
-    g.edges[u, v]['fee_rate_msat'] = int(g.edges[u, v]['fee_proportional_millionths']) / 1000
+    g.edges[u, v]['fee_rate'] = int(g.edges[u, v]['fee_proportional_millionths']) / 10**9
     g.edges[u, v]['delay'] = int(g.edges[u, v]['cltv_expiry_delta'])
     g.edges[u, v]['htlc_minimim_msat'] = int(g.edges[u, v]['htlc_minimim_msat'])
     g.edges[u, v]['htlc_maximum_msat'] = int(g.edges[u, v]['htlc_maximum_msat'])
