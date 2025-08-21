@@ -5,30 +5,57 @@ from tqdm import tqdm
 import networkx as nx
 import itertools
 import requests
+
+
+
+#import time
 import asyncio
+import itertools
+
+#from concurrent.futures import ThreadPoolExecutor
+#from alexber.utils.thread_locals import exec_in_executor
+
+#import nest_asyncio
+#nest_asyncio.apply()
 
 
 
-def take_until_timeout(iterator, max_count=5, per_item_timeout=3):
+#def take_until_timeout(iterator, max_count=5, timeout=1):
+def take_until_timeout(iterator,
+                       max_count=5,
+                       timeout=2,
+                       total_timeout=5,
+                       loop=None):
+    # https://docs.python.org/3/library/asyncio-task.html#asyncio.wait_for
 
-    async def get_elements():
+    async def get_elements(start):
         elements = []
-        for _ in range(max_count):
-            try:
-                path = await asyncio.wait_for(
-                    asyncio.to_thread(next, iterator),
-                    timeout=per_item_timeout
-                )
-            except:
-                break
-            #except asyncio.TimeoutError:
-            #    break
-            #except StopIteration:
-            #    break
-            elements.append(path)
+        #with ThreadPoolExecutor() as executor:
+        for i in itertools.count():
+              if max_count is not None and i >= max_count:
+                  break
+              if total_timeout is not None and loop.time() - start > total_timeout:
+                  break
+              try:
+                  item = await asyncio.wait_for(
+                      asyncio.to_thread(next, iterator),
+                      #exec_in_executor(executor, next, iterator),
+                      #exec_in_executor(executor, asyncio.to_thread, next, iterator),
+                      timeout=timeout
+                  )
+              except asyncio.TimeoutError:
+                  break
+              except StopIteration:
+                  break
+              #yield item#
+              elements.append(item)
+          #executor.shutdown(wait=False)
         return elements
-    
-    return asyncio.get_event_loop().run_until_complete(get_elements())
+
+    loop = asyncio.get_event_loop() if loop is None else loop
+    return loop.run_until_complete(get_elements(loop.time()))
+
+
 
 
 def normalize(x, min, max):
@@ -95,17 +122,17 @@ def cost_function(e, amount, proto_type='LND'):
 
     else:
         cost = 1
-    cost = 0 if cost < 0 else cost
+    cost = 1e-6 if cost < 0 else cost
     return cost
 
 
-def get_shortest_paths(G, u, v, amount, proto_type='LND', max_count=5, timeout=5):
+def get_shortest_paths(G, u, v, amount, proto_type='LND', max_count=5, timeout=1):
 
     def weight_function(u, v, e):
         return cost_function(e, amount, proto_type=proto_type)
     
     return take_until_timeout(nx.all_shortest_paths(G, u, v, weight=weight_function), 
-                              max_count=max_count, per_item_timeout=timeout)
+                              max_count=max_count, timeout=timeout)
 
 
 def random_amount(): # SAT
@@ -152,7 +179,7 @@ country_landmarks = {}
 continent_landmarks = {}
 #degree_centrality = {}
 
-def get_landmarks(G, u, v, type='country', limit=100):
+def get_landmarks(G, u, v, type='country', limit=1000):
     '''
     continent = G.nodes[u]['geojson']['continent']
     country = G.nodes[u]['geojson']['country']
@@ -188,8 +215,9 @@ def get_landmarks(G, u, v, type='country', limit=100):
             landmarks = [i for i in G.nodes if G.nodes[i]['geojson']['continent'] == continent]
             landmarks = sorted(landmarks, key=lambda x: G.nodes[x]['carbon'] / G.degree(x), reverse=False)#[:limit]
             continent_landmarks.update({continent : landmarks})
-        landmarks = [i for i in continent_landmarks[continent] 
-                            if i in G.neighbors(u) or i in G.neighbors(v)] # / G.degree(x)
+        #landmarks = [i for i in continent_landmarks[continent] 
+        #                    if i in G.neighbors(u) or i in G.neighbors(v)] # / G.degree(x)
+        landmarks = continent_landmarks[continent][:limit]
 
     if type == 'country':
         global country_landmarks
@@ -198,25 +226,21 @@ def get_landmarks(G, u, v, type='country', limit=100):
             landmarks = [i for i in G.nodes if G.nodes[i]['geojson']['country'] == country]
             landmarks = sorted(landmarks, key=lambda x: G.nodes[x]['carbon'] / G.degree(x), reverse=False)#[:limit]
             country_landmarks.update({country : landmarks})
-        landmarks = [i for i in country_landmarks[country] 
-                            if i in G.neighbors(u) or i in G.neighbors(v)]   
+        #landmarks = [i for i in country_landmarks[country] 
+        #                    if i in G.neighbors(u) or i in G.neighbors(v)]   
+        landmarks = country_landmarks[country][:limit]
     
     if len(landmarks):
-        print(len(landmarks))
-        return landmarks[0]#
+        #print(len(landmarks))
+        landmarks = landmarks + [G.neighbors(i) for i in landmarks]
+        return set(landmarks)#[0]#
         #return np.random.choice(landmarks[:limit], 1)[0] 
     
 
-def perform_payment(G, u, v, amount, proto_type='LND', max_count=5, timeout=3):
+def perform_payment(G, u, v, amount, proto_type='LND', max_count=5, timeout=1):
         
     if proto_type[0] == 'g':
         proto_type=proto_type[1:]
-        '''
-        paths = get_shortest_paths(G, u, v, amount, 
-                                        proto_type=None,#proto_type,
-                                        max_count=max_count, 
-                                        timeout=timeout)
-        '''
         if v not in G.neighbors(u):
             
             u_country = G.nodes[u]['geojson']['country']
@@ -228,7 +252,29 @@ def perform_payment(G, u, v, amount, proto_type='LND', max_count=5, timeout=3):
                 lm = get_landmarks(G, u, v, type='country')
             elif u_continent == v_continent:
                 lm = get_landmarks(G, u, v, type='continent')
-                #print(lm)
+            if lm is not None:
+                _paths = get_shortest_paths(G, u, lm, amount, 
+                                        proto_type=proto_type,
+                                        max_count=1000,#max_count, 
+                                        timeout=timeout)
+                if not set(itertools.chain.from_iterable(_paths)).isdisjoint(lm):
+                    print('!!!!!!!!!!!!!!')
+                paths = []
+                for p in _paths:
+                    if not set(p).isdisjoint(lm):
+                        paths.append(p)
+                        print(p)
+                if not len(paths):
+                    paths = _paths
+            else:
+                paths = get_shortest_paths(G, u, v, amount, 
+                                    proto_type=proto_type,
+                                    max_count=max_count, 
+                                    timeout=timeout)
+
+
+
+            '''
             if lm is not None:
                 #paths = [[u, i, v] for i in lm]
                 
@@ -243,21 +289,18 @@ def perform_payment(G, u, v, amount, proto_type='LND', max_count=5, timeout=3):
                 paths = []
                 for p1, p2 in zip(lm_paths, def_paths):
                     paths.append(p1 + p2[1:])  
-                ''''''
                 
             else:
                 paths = get_shortest_paths(G, u, v, amount, 
                                         proto_type=proto_type,
                                         max_count=max_count, 
-                                        timeout=timeout) 
-            
+                                        timeout=timeout)
+            '''
         else:
             paths = get_shortest_paths(G, u, v, amount, 
                                     proto_type=proto_type,
                                     max_count=max_count, 
                                     timeout=timeout)   
-        '''
-        '''
     else:
         paths = get_shortest_paths(G, u, v, amount, 
                                 proto_type=proto_type,
@@ -293,14 +336,17 @@ def perform_payment(G, u, v, amount, proto_type='LND', max_count=5, timeout=3):
                 a += fee
             else:
                 break
-
-        metrics['payment_succeed'] = payment_succeed
-        metrics['carbon'] += G.nodes[p[-1]]['carbon']
-        metrics['amount'] = amount
-        metrics['paths'] = paths
-        if payment_succeed:
-            metrics['amount_payed'] = a
-            metrics['delay'] = delay
+        if len(p):
+            metrics['payment_succeed'] = payment_succeed
+            metrics['carbon'] += G.nodes[p[-1]]['carbon']
+            metrics['amount'] = amount
+            metrics['paths'] = paths
+            if payment_succeed:
+                metrics['amount_payed'] = a
+                metrics['delay'] = delay
+                break
+        else:
+            metrics['payment_succeed'] = False
             break
 
     return metrics

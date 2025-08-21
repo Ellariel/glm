@@ -60,11 +60,11 @@ def save_results(results):
 
 
 results = []
-for i, (u, v, amount) in enumerate(tqdm(txs[:100])): #[:100]
+for i, (u, v, amount) in enumerate(tqdm(txs[:5])): #[:100]
     r = perform_payment(g, u, v, amount, 
                                proto_type=args.proto,
                                max_count=5,
-                               timeout=2)
+                               timeout=1)
     results.append(r)
 
     if i % 100 == 0:

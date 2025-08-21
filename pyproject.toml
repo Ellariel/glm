@@ -11,5 +11,8 @@ dependencies = [
 "scipy",
 "matplotlib",
 "networkx>=3.4.2",
+
 "ipykernel",
+#"setuptools",
+#"alex-ber-utils",
 ]
